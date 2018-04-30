@@ -1,9 +1,16 @@
 import { normalize } from "normalizr";
 import { list } from "./schema";
+import { v4 } from "node-uuid";
+import { getListById } from "../lib/store-queries";
 
 const FETCH_LISTS_REQUEST = "FETCH_LISTS_REQUEST";
 const FETCH_LISTS_SUCCESS = "FETCH_LISTS_SUCCESS";
 const FETCH_LISTS_FAILURE = "FETCH_LISTS_FAILURE";
+
+const CREATE_LIST_SUCCESS = "CREATE_LIST_SUCCESS";
+const DELETE_LIST_SUCCESS = "DELETE_LIST_SUCCESS";
+const UPDATE_LIST_SUCCESS = "UPDATE_LIST_SUCCESS";
+const ADD_PLACE = "ADD_PLACE";
 
 /*
 const ids = (state = [], action) => {
@@ -69,30 +76,69 @@ export const fetchLists = () => (dispatch, getState) => {
   const config = {
     headers: { Authorization: `Bearer ${token}` }
   };
+  setTimeout(
+    () =>
+      fetch(`http://localhost:3001/lists`, config)
+        .then(
+          response =>
+            response.json().then(lists => {
+              dispatch({
+                type: FETCH_LISTS_SUCCESS,
+                response: normalize(lists, [list])
+              });
+            }),
+          error => {
+            dispatch({
+              type: FETCH_LISTS_FAILURE,
+              message: error.message || "Something went wrong."
+            });
+          }
+        )
+        .catch(err => console.log("err", err)),
+    500
+  );
+};
 
-  fetch(`http://localhost:3001/lists`, config)
-    .then(
-      response =>
-        response.json().then(lists => {
-          dispatch({
-            type: FETCH_LISTS_SUCCESS,
-            response: normalize(lists, [list])
-          });
-        }),
-      error => {
-        dispatch({
-          type: FETCH_LISTS_FAILURE,
-          message: error.message || "Something went wrong."
-        });
-      }
-    )
-    .catch(err => console.log("err", err));
+export const createList = ({ title, created_by }) => (dispatch, getState) => {
+  dispatch({
+    type: CREATE_LIST_SUCCESS,
+    response: {
+      title: title,
+      created_by: created_by,
+      id: v4(),
+      places: []
+    }
+  });
+};
+
+export const updateList = ({ listId, place }) => (dispatch, getState) => {
+  // TODO: later what this should really do is make a PUT and update with the completed object
+  // because you're actually anticipating getting an object that you have to normalize again
+  const newPlace = {
+    name: place.name,
+    rating: place.rating,
+    id: v4()
+  };
+  dispatch({ type: ADD_PLACE, response: newPlace });
+  const list = getListById(getState(), listId);
+  const updatedList = {
+    ...list,
+    places: list.places.concat(newPlace.id)
+  };
+  dispatch({
+    type: UPDATE_LIST_SUCCESS,
+    response: updatedList
+  });
+};
+
+export const deleteList = id => (dispatch, getState) => {
+  dispatch({
+    type: DELETE_LIST_SUCCESS,
+    id
+  });
 };
 
 export const listsIsFetching = (state = false, action) => {
-  if (filter !== action.filter) {
-    return state;
-  }
   switch (action.type) {
     case "FETCH_LISTS_REQUEST":
       return true;
@@ -107,16 +153,12 @@ export const listsIsFetching = (state = false, action) => {
 export const listsIds = (state = [], action) => {
   switch (action.type) {
     case FETCH_LISTS_SUCCESS:
-      return { ...state, lists: action.response.result };
-    default:
-      return state;
-  }
-};
-
-export const placesById = (state = {}, action) => {
-  switch (action.type) {
-    case FETCH_LISTS_SUCCESS:
-      return { ...state, lists: action.response.entities.places };
+      return action.response.result;
+    case CREATE_LIST_SUCCESS:
+      return [...state, action.response.id];
+    case DELETE_LIST_SUCCESS:
+      const indexOfList = state.indexOf(action.id);
+      return [...state.slice(0, indexOfList), ...state.slice(indexOfList + 1)];
     default:
       return state;
   }
@@ -125,7 +167,26 @@ export const placesById = (state = {}, action) => {
 export const listsById = (state = {}, action) => {
   switch (action.type) {
     case FETCH_LISTS_SUCCESS:
-      return { ...state, lists: action.response.entities.lists };
+      return action.response.entities.lists;
+    case CREATE_LIST_SUCCESS:
+      return { ...state, [action.response.id]: action.response };
+    case UPDATE_LIST_SUCCESS:
+      return { ...state, [action.response.id]: action.response };
+    case DELETE_LIST_SUCCESS:
+      // destructuring: pulling out the key/value pair you want to get rid of and only keeping the rest (restOfState)
+      const { [String(action.id)]: deletedValue, ...restOfState } = state;
+      return restOfState;
+    default:
+      return state;
+  }
+};
+
+export const placesById = (state = {}, action) => {
+  switch (action.type) {
+    case FETCH_LISTS_SUCCESS:
+      return action.response.entities.places;
+    case ADD_PLACE:
+      return { ...state, [action.response.id]: action.response };
     default:
       return state;
   }
